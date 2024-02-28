@@ -11,6 +11,11 @@ pipeline {
                 sh 'mvn --version'
             }
         }
+        stage('Force maven update') {
+            steps {
+                sh 'rm -rf ~/.m2/repository/*'
+            }
+        }    
 
         stage('Fix Code Formatting') {
             steps {

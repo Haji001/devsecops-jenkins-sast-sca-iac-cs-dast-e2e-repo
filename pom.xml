@@ -165,6 +165,14 @@
         <artifactId>commons-exec</artifactId>
         <version>1.4.0</version>
       </dependency>
+
+      <dependency>
+        <groupId>javax.servlet</groupId>
+        <artifactId>javax.servlet-api</artifactId>
+        <version>3.1.0</version> <!-- Use the appropriate version -->
+        <scope>provided</scope>
+      </dependency>
+      
       <dependency>
         <groupId>org.asciidoctor</groupId>
         <artifactId>asciidoctorj</artifactId>

@@ -10,5 +10,12 @@ pipeline {
         sh 'mvn --version'
       }
     }
-  }
+    stage('Comple and Run SonarQube Analysis') {
+      steps {
+        withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+          sh 'echo $SONAR_TOKEN'
+      }
+    }
+    
 }
+

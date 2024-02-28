@@ -14,8 +14,9 @@ pipeline {
       steps {
         withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
           sh 'echo $SONAR_TOKEN'
+        }
       }
     }
-    
-}
-
+  } // Close stages block
+  
+} // Close pipeline block

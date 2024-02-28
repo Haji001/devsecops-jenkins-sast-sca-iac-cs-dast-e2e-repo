@@ -12,6 +12,12 @@ pipeline {
             }
         }
 
+        stage('Fix Code Formatting') {
+            steps {
+                sh 'mvn spotless:apply'
+            }
+        }
+
         stage('Complete and Run SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {

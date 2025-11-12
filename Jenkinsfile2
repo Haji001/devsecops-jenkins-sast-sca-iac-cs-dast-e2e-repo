@@ -1,10 +1,7 @@
-
-
 pipeline {
     agent any
 
     environment {
-        // ✅ Ensure Jenkins can find Docker and other binaries
         PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         IMAGE_NAME = "ant0021/selenium"
         DOCKER_TAG = "${env.BUILD_NUMBER}"
@@ -15,32 +12,46 @@ pipeline {
     }
 
     stages {
+        // ------------------------
+        // 0️⃣ Verify tools & tokens exist
+        // ------------------------
+        stage('Pre-Check Tools') {
+            steps {
+                sh '''
+                    echo "=== Checking installed tools ==="
+                    which snyk || echo "❌ Snyk not found"
+                    snyk --version || true
+                    which checkov || echo "❌ Checkov not found"
+                    checkov --version || true
+                    echo "ZAP binary:"
+                    ls /Applications/ZAP.app/Contents/Java/zap.sh || echo "⚠️ ZAP not found (expected on macOS)"
+                '''
+            }
+        }
 
         // ------------------------
-        // 1️⃣ SAST (Static Code Analysis) - SonarCloud
+        // 1️⃣ SonarCloud Static Analysis (SAST)
         // ------------------------
         stage('Run SonarCloud Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
                     script {
-                        try {
-                            sh """
-                                mvn -Dmaven.test.failure.ignore verify sonar:sonar \
-                                  -Dsonar.login=$SONAR_TOKEN \
-                                  -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
-                                  -Dsonar.organization=devsecops074 \
-                                  -Dsonar.host.url=https://sonarcloud.io
-                            """
-                        } catch (err) {
-                            echo "⚠️ SonarCloud analysis failed: ${err.getMessage()}"
-                        }
+                        sh '''
+                            echo "=== Running SonarCloud Analysis ==="
+                            echo "Sonar token length: ${#SONAR_TOKEN}"
+                            mvn -Dmaven.test.failure.ignore verify sonar:sonar \
+                                -Dsonar.token=$SONAR_TOKEN \
+                                -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
+                                -Dsonar.organization=devsecops074 \
+                                -Dsonar.host.url=https://sonarcloud.io
+                        '''
                     }
                 }
             }
         }
 
         // ------------------------
-        // 2️⃣ Build Jar (App build)
+        // 2️⃣ Build Jar
         // ------------------------
         stage('Build Jar') {
             steps {
@@ -59,65 +70,70 @@ pipeline {
         }
 
         // ------------------------
-        // 4️⃣ Container Scan - Snyk
+        // 4️⃣ Container Scan (Snyk)
         // ------------------------
         stage('Run Container Scan - Snyk') {
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
                     script {
-                        try {
-                            sh """
-                                snyk container test ${IMAGE_NAME}:${DOCKER_TAG} \
-                                --file=Dockerfile \
-                                --severity-threshold=high
-                            """
-                        } catch (err) {
-                            echo "⚠️ Container scan completed with findings: ${err.getMessage()}"
-                        }
+                        sh '''
+                            echo "=== Authenticating Snyk CLI ==="
+                            snyk auth $SNYK_TOKEN || echo "⚠️ Snyk auth failed or already authenticated"
+                            echo "=== Running Snyk Container Scan ==="
+                            snyk container test ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --severity-threshold=high || echo "⚠️ Scan completed with findings"
+                        '''
                     }
                 }
             }
         }
 
         // ------------------------
-        // 5️⃣ Software Composition Analysis (SCA) - Snyk
+        // 5️⃣ Dependency (SCA) Scan - Snyk
         // ------------------------
         stage('Run Dependency Scan - Snyk') {
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
-                    sh "mvn snyk:test -fn"
+                    sh '''
+                        snyk auth $SNYK_TOKEN || echo "⚠️ Already logged in or auth failed"
+                        echo "=== Running Snyk Maven dependency scan ==="
+                        mvn snyk:test -fn || echo "⚠️ Dependency issues found"
+                    '''
                 }
             }
         }
 
         // ------------------------
-        // 6️⃣ DAST (Dynamic App Security) - OWASP ZAP
+        // 6️⃣ DAST - OWASP ZAP
         // ------------------------
         stage('Run DAST using OWASP ZAP') {
             steps {
-                echo "⚡ Running OWASP ZAP baseline scan..."
-                sh """
-                    /Applications/ZAP.app/Contents/Java/zap.sh \
-                    -port 9393 \
-                    -cmd \
-                    -quickurl https://www.example.com \
-                    -quickprogress \
-                    -quickout ./zap-report.html
-                """
+                script {
+                    sh '''
+                        echo "=== Running OWASP ZAP quick scan ==="
+                        if [ -f "/Applications/ZAP.app/Contents/Java/zap.sh" ]; then
+                            /Applications/ZAP.app/Contents/Java/zap.sh -port 9393 -cmd -quickurl https://www.example.com -quickprogress -quickout ./zap-report.html
+                        else
+                            echo "⚠️ ZAP not installed or not found, skipping DAST"
+                        fi
+                    '''
+                }
             }
         }
 
         // ------------------------
-        // 7️⃣ IaC Security - Checkov
+        // 7️⃣ IaC Scan - Checkov
         // ------------------------
         stage('Run Checkov IaC Scan') {
             steps {
-                sh "checkov -s -f main.tf || true"
+                sh '''
+                    echo "=== Running Checkov scan ==="
+                    checkov -s -f main.tf || echo "⚠️ Checkov issues found"
+                '''
             }
         }
 
         // ------------------------
-        // 8️⃣ Push Image to Docker Hub
+        // 8️⃣ Push Image
         // ------------------------
         stage('Push Image to DockerHub') {
             environment {
@@ -128,7 +144,7 @@ pipeline {
                     echo "🔐 Logging in to Docker Hub..."
                     sh 'echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin'
 
-                    echo "🚀 Pushing image ${IMAGE_NAME}:${DOCKER_TAG} and latest tag..."
+                    echo "🚀 Pushing image ${IMAGE_NAME}:${DOCKER_TAG} and latest..."
                     sh """
                         docker push ${IMAGE_NAME}:${DOCKER_TAG}
                         docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest
@@ -141,14 +157,14 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning up Docker credentials..."
+            echo "🧹 Logging out of Docker Hub..."
             sh 'docker logout || true'
         }
         success {
-            echo "✅ Pipeline completed successfully — Image built, scanned, and pushed!"
+            echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo "❌ Pipeline failed — Check logs for failed stage details."
+            echo "❌ Pipeline failed — check logs above for which scan failed."
         }
     }
 }

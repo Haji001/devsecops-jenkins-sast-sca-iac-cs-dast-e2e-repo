@@ -1,0 +1,52 @@
+pipeline {
+    agent any
+
+    environment {
+        // ✅ Ensure Jenkins can find Docker
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        IMAGE_NAME = "ant0021/selenium"
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+    }
+
+    tools {
+        maven 'Maven'
+    }
+
+    stages {
+        stage('Build Jar') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+
+        stage('Build Image') {
+            steps {
+                echo "Building Docker image ${IMAGE_NAME}:${DOCKER_TAG}"
+                sh "docker build -t ${IMAGE_NAME}:${DOCKER_TAG} ."
+            }
+        }
+
+        stage('Push Image') {
+            environment {
+                DOCKER_HUB = credentials('DOCKER_LOGIN')
+            }
+            steps {
+                script {
+                    echo "Logging in to Docker Hub..."
+                    sh 'echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin'
+                    echo "Pushing Docker image..."
+                    sh "docker push ${IMAGE_NAME}:${DOCKER_TAG}"
+                    sh "docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest"
+                    sh "docker push ${IMAGE_NAME}:latest"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Logging out of Docker Hub..."
+            sh 'docker logout || true'
+        }
+    }
+}

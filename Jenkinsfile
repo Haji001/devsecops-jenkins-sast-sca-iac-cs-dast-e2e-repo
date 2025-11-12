@@ -1,7 +1,7 @@
 pipeline {
   agent any
 
-  // ✅ Force Docker path to be visible in all stages
+  // ✅ Ensure Docker path is visible to all stages
   environment {
     PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   }
@@ -11,6 +11,7 @@ pipeline {
   }
 
   stages {
+
     stage('CompileandRunSonarAnalysis') {
       steps {
         withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
@@ -31,18 +32,18 @@ pipeline {
         }
       }
     }
-  stage('Build') {
-    steps {
-      withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
-        script {
-          app = docker.withTool("/usr/local/bin/docker") {
-            docker.build("devsecopsguru/testeb:001", ".")
+
+    stage('Build') {
+      steps {
+        withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
+          script {
+            docker.withTool('local-docker') {
+              app = docker.build("devsecopsguru/testeb:001", ".")
+            }
+          }
         }
       }
     }
-  }
-}
-
 
     stage('RunContainerScan') {
       steps {

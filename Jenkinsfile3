@@ -1,3 +1,5 @@
+
+
 pipeline {
     agent any
 
@@ -12,6 +14,7 @@ pipeline {
     }
 
     stages {
+
         // ------------------------
         // 0️⃣ Verify tools & tokens exist
         // ------------------------
@@ -35,16 +38,14 @@ pipeline {
         stage('Run SonarCloud Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-                    script {
-                        sh '''
-                            echo "=== Running SonarCloud Analysis ==="
-                            mvn -Dmaven.test.failure.ignore verify sonar:sonar \
-                                -Dsonar.token=$SONAR_TOKEN \
-                                -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
-                                -Dsonar.organization=devsecops074 \
-                                -Dsonar.host.url=https://sonarcloud.io || echo "⚠️ Sonar scan failed but continuing"
-                        '''
-                    }
+                    sh '''
+                        echo "=== Running SonarCloud Analysis ==="
+                        mvn -Dmaven.test.failure.ignore verify sonar:sonar \
+                            -Dsonar.token=$SONAR_TOKEN \
+                            -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
+                            -Dsonar.organization=devsecops074 \
+                            -Dsonar.host.url=https://sonarcloud.io || echo "⚠️ Sonar scan failed but continuing"
+                    '''
                 }
             }
         }
@@ -74,18 +75,16 @@ pipeline {
         stage('Run Container Scan - Snyk') {
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
-                    script {
-                        sh '''
-                            echo "=== Authenticating Snyk CLI ==="
-                            snyk auth $SNYK_TOKEN || echo "⚠️ Snyk auth failed or already authenticated"
+                    sh '''
+                        echo "=== Authenticating Snyk CLI ==="
+                        snyk auth $SNYK_TOKEN || echo "⚠️ Snyk auth failed or already authenticated"
 
-                            echo "=== Running Snyk Container Scan ==="
-                            snyk container test ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --severity-threshold=high || echo "⚠️ Scan completed with findings"
+                        echo "=== Running Snyk Container Scan ==="
+                        snyk container test ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --severity-threshold=high || echo "⚠️ Scan completed with findings"
 
-                            echo "=== Uploading container results to Snyk dashboard ==="
-                            snyk container monitor ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --project-name="jenkins-end-to-end:container" || echo "⚠️ Monitor upload failed"
-                        '''
-                    }
+                        echo "=== Uploading container results to Snyk dashboard ==="
+                        snyk container monitor ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --project-name="jenkins-end-to-end:container" || echo "⚠️ Monitor upload failed"
+                    '''
                 }
             }
         }
@@ -97,4 +96,63 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
                     sh '''
-                        echo "=== Runnin
+                        echo "=== Running Snyk Maven dependency scan ==="
+                        snyk auth $SNYK_TOKEN || echo "⚠️ Already logged in or auth failed"
+
+                        mvn snyk:test -Dsnyk.failOnIssues=false || echo "⚠️ Dependency issues found"
+
+                        echo "=== Uploading dependency results to Snyk dashboard ==="
+                        snyk monitor --project-name="jenkins-end-to-end:dependencies" || echo "⚠️ Monitor upload failed"
+                    '''
+                }
+            }
+        }
+
+        // ------------------------
+        // 6️⃣ IaC Scan - Checkov
+        // ------------------------
+        stage('Run Checkov IaC Scan') {
+            steps {
+                sh '''
+                    echo "=== Running Checkov scan ==="
+                    checkov -s -f main.tf || echo "⚠️ Checkov issues found"
+                '''
+            }
+        }
+
+        // ------------------------
+        // 7️⃣ Push Image
+        // ------------------------
+        stage('Push Image to DockerHub') {
+            environment {
+                DOCKER_HUB = credentials('DOCKER_LOGIN')
+            }
+            steps {
+                script {
+                    echo "🔐 Logging in to Docker Hub..."
+                    sh 'echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin'
+
+                    echo "🚀 Pushing image ${IMAGE_NAME}:${DOCKER_TAG} and latest..."
+                    sh """
+                        docker push ${IMAGE_NAME}:${DOCKER_TAG}
+                        docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest
+                        docker push ${IMAGE_NAME}:latest
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "🧹 Logging out of Docker Hub..."
+            sh 'docker logout || true'
+        }
+        success {
+            echo "✅ Pipeline completed successfully! All security scans uploaded to Snyk dashboard."
+        }
+        failure {
+            echo "❌ Pipeline failed — check logs above for which scan failed."
+        }
+    }
+}

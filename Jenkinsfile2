@@ -1,8 +1,10 @@
+
+
 pipeline {
     agent any
 
     environment {
-        // ✅ Ensure Jenkins can find Docker
+        // ✅ Ensure Jenkins can find Docker and other binaries
         PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         IMAGE_NAME = "ant0021/selenium"
         DOCKER_TAG = "${env.BUILD_NUMBER}"
@@ -13,31 +15,125 @@ pipeline {
     }
 
     stages {
+
+        // ------------------------
+        // 1️⃣ SAST (Static Code Analysis) - SonarCloud
+        // ------------------------
+        stage('Run SonarCloud Analysis') {
+            steps {
+                withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                    script {
+                        try {
+                            sh """
+                                mvn -Dmaven.test.failure.ignore verify sonar:sonar \
+                                  -Dsonar.login=$SONAR_TOKEN \
+                                  -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
+                                  -Dsonar.organization=devsecops074 \
+                                  -Dsonar.host.url=https://sonarcloud.io
+                            """
+                        } catch (err) {
+                            echo "⚠️ SonarCloud analysis failed: ${err.getMessage()}"
+                        }
+                    }
+                }
+            }
+        }
+
+        // ------------------------
+        // 2️⃣ Build Jar (App build)
+        // ------------------------
         stage('Build Jar') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Build Image') {
+        // ------------------------
+        // 3️⃣ Build Docker Image
+        // ------------------------
+        stage('Build Docker Image') {
             steps {
-                echo "Building Docker image ${IMAGE_NAME}:${DOCKER_TAG}"
+                echo "🐳 Building Docker image ${IMAGE_NAME}:${DOCKER_TAG}"
                 sh "docker build -t ${IMAGE_NAME}:${DOCKER_TAG} ."
             }
         }
 
-        stage('Push Image') {
+        // ------------------------
+        // 4️⃣ Container Scan - Snyk
+        // ------------------------
+        stage('Run Container Scan - Snyk') {
+            steps {
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    script {
+                        try {
+                            sh """
+                                snyk container test ${IMAGE_NAME}:${DOCKER_TAG} \
+                                --file=Dockerfile \
+                                --severity-threshold=high
+                            """
+                        } catch (err) {
+                            echo "⚠️ Container scan completed with findings: ${err.getMessage()}"
+                        }
+                    }
+                }
+            }
+        }
+
+        // ------------------------
+        // 5️⃣ Software Composition Analysis (SCA) - Snyk
+        // ------------------------
+        stage('Run Dependency Scan - Snyk') {
+            steps {
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    sh "mvn snyk:test -fn"
+                }
+            }
+        }
+
+        // ------------------------
+        // 6️⃣ DAST (Dynamic App Security) - OWASP ZAP
+        // ------------------------
+        stage('Run DAST using OWASP ZAP') {
+            steps {
+                echo "⚡ Running OWASP ZAP baseline scan..."
+                sh """
+                    /Applications/ZAP.app/Contents/Java/zap.sh \
+                    -port 9393 \
+                    -cmd \
+                    -quickurl https://www.example.com \
+                    -quickprogress \
+                    -quickout ./zap-report.html
+                """
+            }
+        }
+
+        // ------------------------
+        // 7️⃣ IaC Security - Checkov
+        // ------------------------
+        stage('Run Checkov IaC Scan') {
+            steps {
+                sh "checkov -s -f main.tf || true"
+            }
+        }
+
+        // ------------------------
+        // 8️⃣ Push Image to Docker Hub
+        // ------------------------
+        stage('Push Image to DockerHub') {
             environment {
                 DOCKER_HUB = credentials('DOCKER_LOGIN')
             }
             steps {
                 script {
-                    echo "Logging in to Docker Hub..."
+                    echo "🔐 Logging in to Docker Hub..."
                     sh 'echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin'
-                    echo "Pushing Docker image..."
-                    sh "docker push ${IMAGE_NAME}:${DOCKER_TAG}"
-                    sh "docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest"
-                    sh "docker push ${IMAGE_NAME}:latest"
+
+                    echo "🚀 Pushing image ${IMAGE_NAME}:${DOCKER_TAG} and latest tag..."
+                    sh """
+                        docker push ${IMAGE_NAME}:${DOCKER_TAG}
+                        docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest
+                        docker push ${IMAGE_NAME}:latest
+                    """
                 }
             }
         }
@@ -45,8 +141,14 @@ pipeline {
 
     post {
         always {
-            echo "Logging out of Docker Hub..."
+            echo "🧹 Cleaning up Docker credentials..."
             sh 'docker logout || true'
+        }
+        success {
+            echo "✅ Pipeline completed successfully — Image built, scanned, and pushed!"
+        }
+        failure {
+            echo "❌ Pipeline failed — Check logs for failed stage details."
         }
     }
 }

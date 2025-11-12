@@ -1,0 +1,100 @@
+pipeline {
+    agent any
+
+    environment {
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        IMAGE_NAME = "ant0021/selenium"
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+    }
+
+    tools {
+        maven 'Maven'
+    }
+
+    stages {
+        // ------------------------
+        // 0️⃣ Verify tools & tokens exist
+        // ------------------------
+        stage('Pre-Check Tools') {
+            steps {
+                sh '''
+                    echo "=== Checking installed tools ==="
+                    which snyk || echo "❌ Snyk not found"
+                    snyk --version || true
+                    which checkov || echo "❌ Checkov not found"
+                    checkov --version || true
+                    echo "ZAP binary:"
+                    ls /Applications/ZAP.app/Contents/Java/zap.sh || echo "⚠️ ZAP not found (expected on macOS)"
+                '''
+            }
+        }
+
+        // ------------------------
+        // 1️⃣ SonarCloud Static Analysis (SAST)
+        // ------------------------
+        stage('Run SonarCloud Analysis') {
+            steps {
+                withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                    script {
+                        sh '''
+                            echo "=== Running SonarCloud Analysis ==="
+                            mvn -Dmaven.test.failure.ignore verify sonar:sonar \
+                                -Dsonar.token=$SONAR_TOKEN \
+                                -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
+                                -Dsonar.organization=devsecops074 \
+                                -Dsonar.host.url=https://sonarcloud.io || echo "⚠️ Sonar scan failed but continuing"
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ------------------------
+        // 2️⃣ Build Jar
+        // ------------------------
+        stage('Build Jar') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+
+        // ------------------------
+        // 3️⃣ Build Docker Image
+        // ------------------------
+        stage('Build Docker Image') {
+            steps {
+                echo "🐳 Building Docker image ${IMAGE_NAME}:${DOCKER_TAG}"
+                sh "docker build -t ${IMAGE_NAME}:${DOCKER_TAG} ."
+            }
+        }
+
+        // ------------------------
+        // 4️⃣ Container Scan (Snyk)
+        // ------------------------
+        stage('Run Container Scan - Snyk') {
+            steps {
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    script {
+                        sh '''
+                            echo "=== Authenticating Snyk CLI ==="
+                            snyk auth $SNYK_TOKEN || echo "⚠️ Snyk auth failed or already authenticated"
+
+                            echo "=== Running Snyk Container Scan ==="
+                            snyk container test ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --severity-threshold=high || echo "⚠️ Scan completed with findings"
+
+                            echo "=== Uploading container results to Snyk dashboard ==="
+                            snyk container monitor ${IMAGE_NAME}:${DOCKER_TAG} --file=Dockerfile --project-name="jenkins-end-to-end:container" || echo "⚠️ Monitor upload failed"
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ------------------------
+        // 5️⃣ Dependency (SCA) Scan - Snyk
+        // ------------------------
+        stage('Run Dependency Scan - Snyk') {
+            steps {
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    sh '''
+                        echo "=== Runnin

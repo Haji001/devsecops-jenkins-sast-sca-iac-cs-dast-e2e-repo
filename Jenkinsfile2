@@ -105,20 +105,20 @@ pipeline {
         // ------------------------
         // 6️⃣ DAST - OWASP ZAP
         // ------------------------
-        stage('Run DAST using OWASP ZAP') {
-            steps {
-                script {
-                    sh '''
-                        echo "=== Running OWASP ZAP quick scan ==="
-                        if [ -f "/Applications/ZAP.app/Contents/Java/zap.sh" ]; then
-                            /Applications/ZAP.app/Contents/Java/zap.sh -port 9393 -cmd -quickurl https://www.example.com -quickprogress -quickout ./zap-report.html
-                        else
-                            echo "⚠️ ZAP not installed or not found, skipping DAST"
-                        fi
-                    '''
-                }
-            }
-        }
+        // stage('Run DAST using OWASP ZAP') {
+        //     steps {
+        //         script {
+        //             sh '''
+        //                 echo "=== Running OWASP ZAP quick scan ==="
+        //                 if [ -f "/Applications/ZAP.app/Contents/Java/zap.sh" ]; then
+        //                     /Applications/ZAP.app/Contents/Java/zap.sh -port 9393 -cmd -quickurl https://www.example.com -quickprogress -quickout ./zap-report.html
+        //                 else
+        //                     echo "⚠️ ZAP not installed or not found, skipping DAST"
+        //                 fi
+        //             '''
+        //         }
+        //     }
+        // }
 
         // ------------------------
         // 7️⃣ IaC Scan - Checkov

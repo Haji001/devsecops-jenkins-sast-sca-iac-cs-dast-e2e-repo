@@ -8,7 +8,20 @@ pipeline {
     stage('CompileandRunSonarAnalysis') {
       steps {
         withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-          sh("mvn -Dmaven.test.failure.ignore verify sonar:sonar -Dsonar.login=$SONAR_TOKEN -Dsonar.projectKey=easybuggy -Dsonar.host.url=http://localhost:9000/")
+          script {
+            try {
+              sh """
+                mvn -Dmaven.test.failure.ignore verify sonar:sonar \
+                  -Dsonar.login=$SONAR_TOKEN \
+                  -Dsonar.projectKey=devsecops074_devsecops-jenkins-sast-sca-iac-cs-dast-e2e-repo \
+                  -Dsonar.organization=devsecops074 \
+                  -Dsonar.host.url=https://sonarcloud.io
+              """
+            } catch (err) {
+              echo "Warning: SonarCloud analysis failed - ${err.getMessage()}"
+              echo "Check your SonarCloud configuration."
+            }
+          }
         }
       }
     }

@@ -31,16 +31,18 @@ pipeline {
         }
       }
     }
-
-    stage('Build') {
-      steps {
-        withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
-          script {
-            app = docker.build("devsecopsguru/testeb:001", ".")
-          }
+  stage('Build') {
+    steps {
+      withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
+        script {
+          app = docker.withTool("/usr/local/bin/docker") {
+            docker.build("devsecopsguru/testeb:001", ".")
         }
       }
     }
+  }
+}
+
 
     stage('RunContainerScan') {
       steps {

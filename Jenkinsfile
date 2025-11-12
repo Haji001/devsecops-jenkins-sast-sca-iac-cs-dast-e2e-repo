@@ -35,10 +35,14 @@ pipeline {
 
     stage('Build') {
       steps {
-        withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
-          script {
-            docker.withTool('local-docker') {
-              app = docker.build("devsecopsguru/testeb:001", ".")
+        // ✅ Add Docker to PATH so Jenkins can find it
+        withEnv(["PATH+DOCKER=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"]) {
+          withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
+            script {
+              // ✅ Use the Docker tool defined under Manage Jenkins > Tools
+              docker.withTool('local-docker') {
+                app = docker.build("devsecopsguru/testeb:001", ".")
+              }
             }
           }
         }

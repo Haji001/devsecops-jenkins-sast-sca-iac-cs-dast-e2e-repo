@@ -1,5 +1,11 @@
 pipeline {
   agent any
+
+  // ✅ Force Docker path to be visible in all stages
+  environment {
+    PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  }
+
   tools {
     maven 'Maven'
   }
@@ -25,6 +31,7 @@ pipeline {
         }
       }
     }
+
     stage('Build') {
       steps {
         withDockerRegistry([credentialsId: "DOCKER_LOGIN", url: "https://index.docker.io/v1/"]) {
@@ -34,6 +41,7 @@ pipeline {
         }
       }
     }
+
     stage('RunContainerScan') {
       steps {
         withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
@@ -47,6 +55,7 @@ pipeline {
         }
       }
     }
+
     stage('RunSnykSCA') {
       steps {
         withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
@@ -54,6 +63,7 @@ pipeline {
         }
       }
     }
+
     stage('RunDASTUsingZAP') {
       steps {
         sh("/Applications/ZAP.app/Contents/Java/zap.sh -port 9393 -cmd -quickurl https://www.example.com -quickprogress -quickout ./Output.html")
@@ -65,6 +75,5 @@ pipeline {
         sh("checkov -s -f main.tf")
       }
     }
-
   }
 }
